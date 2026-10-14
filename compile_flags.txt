@@ -1,0 +1,2 @@
+-I/home/jay/open_source/glfw/include 
+-I./include/ 
