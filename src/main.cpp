@@ -46,27 +46,7 @@ void process_input(GLFWwindow *window) {
   };
 }
 
-int main() {
-  // Setup Opengl
-  GLFWwindow *window = setup_window(800, 600);
-  if (window == nullptr) {
-    return -1;
-  }
-
-  // clang-format off
-  float vertices[] = {
-    -0.5,-0.5,0,            // 0 
-    0.5,-0.5,0,             // 1
-    0.5,0.5,0,              // 2
-    -0.5,0.5,0,           // 3
-  };
-
-  unsigned int indices[] = {
-    0, 3, 2,
-    0, 1, 2,
-  };
-  // clang-format on
-
+int get_program(int c) {
   // Setting up our graphics pipeline
   const char *vshader_src =
       "#version 330 core\n"
@@ -79,30 +59,17 @@ int main() {
                             "void main() {\n"
                             "    FragColor = vec4(0,1,0,1);\n"
                             "}\0";
-
-  // Start a VAO
-  unsigned int VAO;
-  glGenVertexArrays(1, &VAO);
-  glBindVertexArray(VAO);
-
-  // We still need to define a VBO for GL_ARRAY_BUFFER to store our vertices
-  unsigned int VBO;
-  glGenBuffers(1, &VBO);
-  glBindBuffer(GL_ARRAY_BUFFER, VBO);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-  // Instantiate a EBO for the indices which we will use to draw
-  unsigned int EBO;
-  glGenBuffers(1, &EBO);
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices,
-               GL_STATIC_DRAW);
-
+  // TODO: Hard code another shader for now
+  const char *fshader_src2 = "#version 330 core\n"
+                             "out vec4 FragColor;\n"
+                             "void main() {\n"
+                             "    FragColor = vec4(1,0,0,1);\n"
+                             "}\0";
   // Create Shaders
   unsigned int vertex_shader = glCreateShader(GL_VERTEX_SHADER);
   unsigned int fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
   glShaderSource(vertex_shader, 1, &vshader_src, NULL);
-  glShaderSource(fragment_shader, 1, &fshader_src, NULL);
+  glShaderSource(fragment_shader, 1, c ? &fshader_src : &fshader_src2, NULL);
   glCompileShader(vertex_shader);
   glCompileShader(fragment_shader);
 
@@ -124,13 +91,67 @@ int main() {
   // Clean up
   glDeleteShader(vertex_shader);
   glDeleteShader(fragment_shader);
+  return shader_program;
+}
 
-  // Use program
-  glUseProgram(shader_program);
+int get_vao(float *vertices, unsigned int *indices, size_t v_len,
+            size_t i_len) {
+  // Create VAO
+  unsigned int VAO;
+  glGenVertexArrays(1, &VAO);
+  glBindVertexArray(VAO);
+
+  // Create VBO for our vertices
+  unsigned int VBO;
+  glGenBuffers(1, &VBO);
+  glBindBuffer(GL_ARRAY_BUFFER, VBO);
+  glBufferData(GL_ARRAY_BUFFER, v_len, vertices, GL_STATIC_DRAW);
+
+  // Create EBO for the indices we actually want to draw
+  unsigned int EBO;
+  glGenBuffers(1, &EBO);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, i_len, indices, GL_STATIC_DRAW);
 
   // Tell graphics pipeline how to read data in VBO
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
+
+  // Unbind VAO
+  glBindVertexArray(0);
+  return VAO;
+}
+
+int main() {
+  // Setup Opengl
+  GLFWwindow *window = setup_window(800, 600);
+  if (window == nullptr) {
+    return -1;
+  }
+
+  // clang-format off
+  float vertices[] = {
+    -0.5,-0.5,0,            // 0 
+    0.5,-0.5,0,             // 1
+    0.5,0.5,0,              // 2
+    -0.5,0.5,0,           // 3
+  };
+
+  unsigned int idx1[] = {
+    0, 3, 2,
+  };
+  unsigned int idx2[] = {
+    0, 1, 2,
+  };
+  // clang-format on
+
+  // Setup the VAOs
+  unsigned int vao1 = get_vao(vertices, idx1, sizeof(vertices), sizeof(idx1));
+  unsigned int vao2 = get_vao(vertices, idx2, sizeof(vertices), sizeof(idx2));
+
+  // Load program
+  unsigned int p1 = get_program(0);
+  unsigned int p2 = get_program(1);
 
   const char *DEBUG = std::getenv("DEBUG");
   if (DEBUG != nullptr)
@@ -142,10 +163,15 @@ int main() {
     process_input(window);
 
     // Render stuff
-    glClearColor(1, 0, 0, 1);     // State setting
+    glClearColor(0, 0, 0, 0);     // State setting
     glClear(GL_COLOR_BUFFER_BIT); // State using
 
-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(vao1);
+    glUseProgram(p1);
+    glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(vao2);
+    glUseProgram(p2);
+    glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, 0);
 
     // Not too sure exactly what events we are polling now?
     glfwPollEvents();
