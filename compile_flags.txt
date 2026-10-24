@@ -1,2 +1,3 @@
 -I/home/jay/open_source/glfw/include 
 -I./include/ 
+-std=c++23

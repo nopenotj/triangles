@@ -1,12 +1,19 @@
+#include "glm/ext/quaternion_geometric.hpp"
 #include "glm/ext/vector_float3.hpp"
+#include "glm/geometric.hpp"
 #include "glm/trigonometric.hpp"
 #include "glm/ext/matrix_transform.hpp"
+#include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdlib>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <fstream>
+#include <iterator>
+#include <ostream>
+#include <print>
 #include <sstream>
 #include <string>
 #define STB_IMAGE_IMPLEMENTATION
@@ -15,11 +22,44 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-struct Pos {
-    float x, y, z;
-};
+glm::vec3 cam_pos = {0, 0, 0};
+glm::vec3 cam_dir = {0, 0, -1};
+glm::vec3 cam_up = {0, 1, 0};
 
-Pos camera = {0, 0, -3};
+float t = 0;
+float dt = 0;
+
+float mouse_sensitivity = 0.10;
+double mouse_x, mouse_y;
+
+// Default is facing forward which is down the -z axis
+float yaw = -90, pitch = 0;
+
+void handle_mouse_pos(GLFWwindow *window, double xpos, double ypos) {
+
+    double dx = xpos - mouse_x;
+    double dy = ypos - mouse_y;
+    mouse_x = xpos;
+    mouse_y = ypos;
+
+    pitch -= dy * mouse_sensitivity;
+    yaw += dx * mouse_sensitivity;
+
+    if (pitch > 89) {
+        pitch = 89;
+    }
+    if (pitch < -89) {
+        pitch = -89;
+    }
+
+    std::println("pitch {} yaw {}", pitch, yaw);
+
+    cam_dir = glm::normalize(glm::vec3{
+        cos(glm::radians(yaw)) * cos(glm::radians(pitch)),
+        sin(glm::radians(pitch)),
+        sin(glm::radians(yaw)) * cos(glm::radians(pitch)),
+    });
+}
 
 GLFWwindow *setup_window(int default_width, int default_height) {
 
@@ -57,25 +97,40 @@ GLFWwindow *setup_window(int default_width, int default_height) {
 
     // Enable depth buffer
     glEnable(GL_DEPTH_TEST);
+    // Capture move for movement
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    glfwGetCursorPos(window, &mouse_x, &mouse_y);
+    glfwSetCursorPosCallback(window, handle_mouse_pos);
+
     return window;
 }
 
 void process_input(GLFWwindow *window) {
+    float cam_speed = 20 * dt;
     if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, true);
     };
-    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
-        camera.z += 0.1;
+    bool moved = false;
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+        cam_pos += cam_dir * cam_speed;
+        moved = true;
     };
-    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
-        camera.z -= 0.1;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+        cam_pos -= cam_dir * cam_speed;
+        moved = true;
     };
-    if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
-        camera.x += 0.1;
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+        cam_pos -= glm::normalize(glm::cross(cam_dir, cam_up)) * cam_speed;
+        moved = true;
     };
-    if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
-        camera.x -= 0.1;
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+        cam_pos += glm::normalize(glm::cross(cam_dir, cam_up)) * cam_speed;
+        moved = true;
     };
+
+    if (moved)
+        std::cout << "Moved to " << cam_pos.x << "," << cam_pos.y << ","
+                  << cam_pos.z << "." << std::endl;
 }
 
 int get_program(const char *vshader_src, const char *fshader_src) {
@@ -219,7 +274,6 @@ int main() {
     stbi_image_free(data);
 
     // Setup transformation matrix
-
     glm::mat4 projection =
         glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
     unsigned int world_loc = glGetUniformLocation(p1, "world");
@@ -233,7 +287,7 @@ int main() {
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
     // Generate Cubes
-    Pos cubes[10];
+    glm::vec3 cubes[10];
     for (int i = 0; i < 10; i++) {
         cubes[i] = {(float)(rand() % 10), (float)(rand() % 10),
                     (float)(rand() % 10)};
@@ -241,10 +295,14 @@ int main() {
 
     // RENDER LOOP!!
     while (!glfwWindowShouldClose(window)) {
+
+        // Keep dt up to date
+        dt = glfwGetTime() - t;
+        t += dt;
+
         // Process user input
         process_input(window);
-        glm::mat4 view = glm::mat4(1.0f);
-        view = translate(view, glm::vec3(camera.x, camera.y, camera.z));
+        glm::mat4 view = glm::lookAt(cam_pos, cam_pos + cam_dir, cam_up);
         glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
 
         // Clear info from last scene
@@ -254,8 +312,7 @@ int main() {
         // Rener cubes
         for (int i = 0; i < 10; i++) {
             glm::mat4 world = glm::mat4(1.0f);
-            world = glm::translate(
-                world, glm::vec3(cubes[i].x, cubes[i].y, cubes[i].z));
+            world = glm::translate(world, cubes[i]);
             world =
                 glm::rotate(world, (float)glfwGetTime(), glm::vec3(1, 1, 0));
             glUniformMatrix4fv(world_loc, 1, GL_FALSE, glm::value_ptr(world));
@@ -263,8 +320,8 @@ int main() {
         }
 
         // Not too sure exactly what events we are polling now?
-        glfwPollEvents();
         glfwSwapBuffers(window);
+        glfwPollEvents();
     }
 
     glfwTerminate();
